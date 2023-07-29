@@ -19,6 +19,10 @@ from linebot.models import (
 app = Flask(__name__)
 
 categories = ['国内', '国際', '経済', 'エンタメ', 'スポーツ', 'IT', '科学', 'ライフ']
+news_sites = ['ヤフーニュース', 'CNN']
+
+# 0:ヤフーニュース 1:CNNニュース
+news_flag = 0
 
 #環境変数取得
 YOUR_CHANNEL_ACCESS_TOKEN = os.environ["YOUR_CHANNEL_ACCESS_TOKEN"]
@@ -48,23 +52,40 @@ def callback():
 
     return 'OK'
 
-#上位5位のニュースを取得
-def news_ranking():
-    url = 'https://news.yahoo.co.jp/ranking/access/news'
+#上位5位のヤフーニュースを取得
+def yahoo_news_ranking():
+    url = 'https://news.yahoo.co.jp'
     r = requests.get(url)
     soup = BeautifulSoup(r.text, "html.parser")
-    elements = soup.select('.newsFeed_item.newsFeed_item-normal.newsFeed_item-ranking')
+    #クラス名が変わるので注意！！
+    elements = soup.select('.sc-dvXYtj.iduHXF')
     elements = elements[:5]
     
     news_urls = []
     for element in elements:
-        url = element.a['href']
-        news_urls.append(url)
+        link = element.a['href']
+        news_urls.append(link)
+    
+    return news_urls
+
+#上位5位のCNNニュースを取得
+def cnn_news_ranking():
+    url = 'https://www.cnn.co.jp/world/'
+    r = requests.get(url)
+    soup = BeautifulSoup(r.text, "html.parser")
+    elements = soup.select('.list-rank li a')
+
+    news_urls = []
+    news_titles = []
+    # ニュースのURLとタイトルを取得
+    for element in elements:
+        link = 'https://www.cnn.co.jp' + element.get('href')
+        news_urls.append(link)
     
     return news_urls
 
 def send_news_ranking():
-    news_urls = news_ranking()
+    news_urls = yahoo_news_ranking()
     messages = [TextSendMessage(text=url) for url in news_urls]
     line_bot_api.broadcast(messages=messages)
 
@@ -95,22 +116,31 @@ def scraping(topic):
     url = 'https://news.yahoo.co.jp/'
     r = requests.get(url)
     soup = BeautifulSoup(r.text, "html.parser")
-    elements = soup.select('.sc-fKgJPI.fFnFHR')
+    
+    list_item = soup.find_all('li')
+    #もしかしたらエラーの原因になるかも
+    list_item = list_item[12:21]
+    
+    # <a>要素からトピックを取得
+    a_contents = [li.a for li in list_item]
     
     articles_dict = []
     topic = topic 
     #トピックのURL取得
-    for i, element in enumerate(elements):
-        if topic in element.text:
+    for i, a_content in enumerate(a_contents):
+        if topic in a_content.text:
             categories_num = i
     
-    element = elements[categories_num]
-    topic_url= element.a['href']
+    a_content = a_contents[categories_num]
+    
+    topic_url = a_content['href']
     URL = url + topic_url
     
     r = requests.get(URL)
     soup = BeautifulSoup(r.text, "html.parser")
-    elements = soup.select('.sc-fXazdy.UjHkE')
+    #クラス名が変わるので注意！！
+    elements = soup.select('.sc-dvXYtj.iduHXF')
+    
     elements = elements[:5]
     
     news_urls = []
@@ -121,16 +151,18 @@ def scraping(topic):
         title = element.text[1:]
         news_urls.append(url)
         news_titles.append(title)
-        time.sleep(0.1)
+        time.sleep(0.5)
     
     news_text = []
+    #ニュースの本文を取得
     for news_url in news_urls:
         r = requests.get(news_url)
         soup = BeautifulSoup(r.text, "html.parser")
-        elements = soup.select('.sc-hcmsbg.iHLBIg.yjSlinkDirectlink.highLightSearchTarget')
-
+        #クラス名が変わるので注意！！ 
+        elements = soup.select('.sc-gDyJDg.dmrAcv.yjSlinkDirectlink.highLightSearchTarget')
+    
         text = ""
-
+    
         #ニュース記事の本文が配列で区切られていた場合
         for i in range(0, 8):
             try:
@@ -140,10 +172,11 @@ def scraping(topic):
                     text += elements[i].text
             except:
                 pass
-
+    
         #ページが1つだけのとき、エラーが出るため
         try:
-            page_element = soup.select('.sc-dYXZXt.jzZUwL')
+            #クラス名が変わるので注意！！ （取得例：２ページ)
+            page_element = soup.select('.sc-ihRHuF.kFnlxQ')
             page = page_element[0].text         
             page_str = ''.join(filter(str.isdigit, page))
             page_num = int(page_str)
@@ -156,7 +189,8 @@ def scraping(topic):
                 news_url_page = news_url + "?page=" + str(page_num)
                 r = requests.get(news_url_page)
                 soup = BeautifulSoup(r.text, "html.parser")
-                elements = soup.select('.sc-hcmsbg.iHLBIg.yjSlinkDirectlink.highLightSearchTarget')
+                #クラス名が変わるので注意！！ 
+                elements = soup.select('.sc-gDyJDg.dmrAcv.yjSlinkDirectlink.highLightSearchTarget')
                 #ニュース記事の本文が配列で区切られていた場合
                 for i in range(0, 8):
                     try:
@@ -166,8 +200,8 @@ def scraping(topic):
                         
         news_text.append(text)
     
-        time.sleep(1)
-    
+        time.sleep(0.5)
+
     articles = []
     for url, title, text in zip(news_urls, news_titles, news_text):
         article = {
@@ -177,7 +211,7 @@ def scraping(topic):
         }
         articles.append(article)
 
-    return articles  
+    return articles
 
 def clean_data(articles):
     for i in range(len(articles)):
@@ -188,8 +222,6 @@ def clean_data(articles):
 
     return articles
 
-
-
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event): 
     
@@ -199,10 +231,18 @@ def handle_message(event):
     #     event.reply_token,
     #     TextMessage(text=user_id))
     
+    cnn_news_ranking()
+    
+    if (event.message.text == 'ヤフーニュース'):
+        news_flag = 0
+    elif (event.message.text == 'CNN'):
+        news_flag = 1
     
     if event.message.text in categories:
         articles_dict = scraping(event.message.text)
         articles = clean_data(articles_dict)
+    elif (event.message.text in news_sites):
+        pass
     else:
         line_bot_api.reply_message(
             event.reply_token,
