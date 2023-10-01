@@ -89,6 +89,11 @@ def send_news_ranking():
     news_urls = yahoo_news_ranking()
     messages = [TextSendMessage(text=url) for url in news_urls]
     line_bot_api.broadcast(messages=messages)
+    
+    news_urls = cnn_news_ranking()
+    messages = [TextSendMessage(text=url) for url in news_urls]
+    line_bot_api.broadcast(messages=messages)
+
 
 # 現在の時刻を取得
 now = datetime.datetime.now().time()
@@ -111,6 +116,7 @@ if (start_time <= now <= end_time):
    send_news_ranking()
 #else:
    #line_bot_api.push_message(user_id, TextSendMessage(text='送信できません'))
+
 
         
 #ヤフーニュースの情報を取得
