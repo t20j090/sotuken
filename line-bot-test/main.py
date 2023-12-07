@@ -30,13 +30,16 @@ yahoo_categories = ['国内', '国際', '経済', 'エンタメ', 'スポーツ'
 cnn_categories = ['World', 'USA', 'Business', 'Tech', 'Entertainment', 'Odd News']
 cnn_categories_change = ['世界', 'アメリカ', '経済', 'テクノロジー', 'エンタメ', '変わったニュース']
 sankei_categories = ['社会', '政治', '国際', '経済', 'スポーツ', 'エンタメ', 'ライフ']
-news_sites = ['ヤフーニュース', 'CNNニュース', '産経ニュース']
+news_sites = ['ヤフーニュース', 'CNNニュース', '産経ニュース', '要約', '音声変換']
 
 # 0:ヤフーニュース 1:CNNニュース 2:産経ニュース
 news_flag = 0
 
 #0:要約しない 1:要約する
 summary_flag = 0
+
+#0:音声変換しない 1:音声変換する
+text_to_speech_flag = 0
 
 #環境変数取得
 YOUR_CHANNEL_ACCESS_TOKEN = os.environ["YOUR_CHANNEL_ACCESS_TOKEN"]
@@ -49,19 +52,9 @@ handler = WebhookHandler(YOUR_CHANNEL_SECRET)
 app_key = '7cxbb0znnuk211n'
 app_secret = 'p41f3wefjt3blmw'
 
-# 期限切れのアクセストークン
-expired_access_token = 'sl.BqZPzPJJKRvAe2tBsxlXaWlbcQp5WkR3zxPSTA5Hi-cRRwQHuVKkevm8nvbSHRNqiSDh_8b9qDT8oriXEAum5o3EdiFAtlV7iboICaXJ7HJC9Bc15xZT77vOYSiPpM4Yn2VWIRXbFS_SHHQ'
-
-
-# Dropboxアクセストークンを設定
-try:
-    # Dropbox認証
-    flow = dropbox.DropboxOAuth2FlowNoRedirect(app_key, app_secret)
-    new_access_token, user_id = flow.refresh_token(expired_access_token)
-except:
-    new_access_token = 'sl.BqZPzPJJKRvAe2tBsxlXaWlbcQp5WkR3zxPSTA5Hi-cRRwQHuVKkevm8nvbSHRNqiSDh_8b9qDT8oriXEAum5o3EdiFAtlV7iboICaXJ7HJC9Bc15xZT77vOYSiPpM4Yn2VWIRXbFS_SHHQ'
-    
-dbx = dropbox.Dropbox(new_access_token)
+# アクセストークン 
+access_token = 'sl.BrQvSFEKU2Fay_hLDdfzbHS5ZNKlsYyf6Cp2xiYTCDSHV0ZTLN_Xv4J9izQJ1MeBw3Wp0ta1LR24UOWHBaZJVy9G6sjYrz5NtUf9Xc5hPA2NDnylw5aNA1qA17ldmr3NVbXRd64hhrXE79c'    
+dbx = dropbox.Dropbox(access_token)
 
 
 @app.route("/")
@@ -464,8 +457,8 @@ def send_news_ranking():
 now = datetime.datetime.now().time()
 
 # 判定する時間帯を設定（開始時刻・終了時刻から-9時間する必要がある）
-start_time = datetime.time(21, 40)  # 開始時刻 21:50
-end_time = datetime.time(22, 10)   # 終了時刻 22:10
+start_time = datetime.time(4, 40)  # 開始時刻
+end_time = datetime.time(5, 20)   # 終了時刻
 
 #現在の日付を取得
 # t_delta = datetime.timedelta(hours=9)
@@ -529,7 +522,7 @@ def yahoo_news_scraping(topic):
         r = requests.get(news_url)
         soup = BeautifulSoup(r.text, "html.parser")
         #クラス名が変わるので注意！！ 
-        elements = soup.select('.sc-iMCRTP.ePfheF.yjSlinkDirectlink.highLightSearchTarget')
+        elements = soup.select('.sc-ksXiki.dXXEDb.yjSlinkDirectlink.highLightSearchTarget')
     
         text = ""
     
@@ -665,7 +658,7 @@ def sankei_news_scraping(topic):
     r = requests.get(url)
     soup = BeautifulSoup(r.text, "html.parser")
     elements = soup.select('.nav-link')
-    categories_elements = elements[2:9]
+    categories_elements = elements[11:18]
     
     #カテゴリーのURL取得
     category_urls = []
@@ -740,7 +733,7 @@ def yahoo_news_text(url):
     r = requests.get(url)
     soup = BeautifulSoup(r.text, "html.parser")
     #クラス名が変わるので注意！！ 
-    elements = soup.select('.sc-iMCRTP.ePfheF.yjSlinkDirectlink.highLightSearchTarget')
+    elements = soup.select('.sc-ksXiki.dXXEDb.yjSlinkDirectlink.highLightSearchTarget')
 
     text = ""
 
@@ -895,19 +888,8 @@ def is_valid_url(url):
         return False
 
 def text_to_speech(text):
-    return False
-
-@handler.add(MessageEvent, message=TextMessage)
-def handle_message(event):
-    #ユーザーIDを取得する
-    user_id = event.source.user_id
-    
-    global news_flag
-    global summary_flag
-    
     try:
     # 音声ファイルを作成
-        text = "このエラーは、Dropbox APIに対して必要なスコープ（sharing.write）がアプリケーションに許可されていないために発生しています。Dropbox APIを使用するには、アプリケーションの設定で適切なスコープを設定する必要があります。"
         tts = gTTS(text, lang="ja")
 
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as temp_file:
@@ -920,31 +902,24 @@ def handle_message(event):
             dbx.files_upload(file.read(), '/uploaded-files/' + os.path.basename(audio_file_path))
 
         # Dropbox上のファイルへの共有可能なURLを生成
-        shared_url = dbx.sharing_create_shared_link('/uploaded-files/' + os.path.basename(audio_file_path))
-        # shared_url = shared_link_metadata.url.replace('?dl=0', '?dl=1')
-
-        # Lineに音声ファイルを送信
-        # audio_message = AudioSendMessage(original_content_url=shared_url, duration=22000)  # durationはダミーの値
-        # line_bot_api.push_message(
-        #     user_id,
-        #     [TextSendMessage(text="テキストメッセージ"), audio_message]
-        # )
-        line_bot_api.reply_message(
-            event.reply_token,
-            AudioSendMessage(type="audio", original_content_url=shared_url, duration=22000))
-
-    except Exception as e:
-        error_message = f"エラーが発生しました: {str(e)}"
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text=error_message)
-        )
+        shared_link_metadata = dbx.sharing_create_shared_link('/uploaded-files/' + os.path.basename(audio_file_path))
+        shared_url = shared_link_metadata.url.replace('&dl=0', '&dl=1')
 
     finally:
         # 一時ファイルを削除
         os.remove(audio_file_path)
 
+    return shared_url
 
+
+@handler.add(MessageEvent, message=TextMessage)
+def handle_message(event):
+    #ユーザーIDを取得する
+    user_id = event.source.user_id
+    
+    global news_flag
+    global summary_flag
+    global text_to_speech_flag
     
     if (event.message.text == 'ヤフーニュース'):
         line_bot_api.reply_message(
@@ -966,112 +941,104 @@ def handle_message(event):
         send_button_message(user_id)
     elif (event.message.text == '要約'):
         summary_flag = 1
+    elif (event.message.text == '音声変換'):
+        text_to_speech_flag = 1
     
-    if ((news_flag == 0) and (summary_flag != 1)):
+    if ((news_flag == 0) and (summary_flag == 0) and (text_to_speech_flag == 0)):
         if event.message.text in yahoo_categories:
             articles_dict = yahoo_news_scraping(event.message.text)
             articles = clean_data(articles_dict)
-        # elif (event.message.text in news_sites):
-        #     pass
         else:
             pass
-    elif ((news_flag == 1) and (summary_flag != 1)):
+    elif ((news_flag == 1) and (summary_flag == 0) and (text_to_speech_flag == 0)):
         if (event.message.text in cnn_categories_change):
             articles_dict = cnn_news_scraping(cnn_categories[cnn_categories_change.index(event.message.text)])
             articles = clean_data(articles_dict)
-        # elif (event.message.text in news_sites):
-        #     pass
         else:
             pass
-    elif ((news_flag == 2) and (summary_flag != 1)):
+    elif ((news_flag == 2) and (summary_flag == 0) and (text_to_speech_flag == 0)):
         if (event.message.text in sankei_categories):
             articles_dict = sankei_news_scraping(event.message.text)
             articles = clean_data_sankei(articles_dict)
-        # elif (event.message.text in news_sites):
-        #     pass
         else:
             pass
-    elif ((summary_flag == 1) and (news_flag == 0)):
+    elif ((summary_flag == 1) and (text_to_speech_flag == 0)):
         url = event.message.text
         if (is_valid_url(url)):
-            sentence = yahoo_news_text(url)
-            split_sentence = length_decision(sentence)
-            
-            errormessage = ['']
-            summary_sentence = ''
-            for i, sentence in enumerate(split_sentence):
-                sentence = sentence.replace(' ', '')
-                result = text_summary(sentence, errormessage)
+            try:
                 try:
-                    summary_sentence += result
+                    sentence = yahoo_news_text(url)
                 except:
                     pass
+                
+                try:
+                    sentence = cnn_news_text(url)
+                except:
+                    pass
+                
+                try:
+                    sentence = sankei_news_text(url)
+                except:
+                    pass
+                
+                split_sentence = length_decision(sentence)
+                
+                errormessage = ['']
+                summary_sentence = ''
+                for i, sentence in enumerate(split_sentence):
+                    sentence = sentence.replace(' ', '')
+                    result = text_summary(sentence, errormessage)
+                    try:
+                        summary_sentence += result
+                    except:
+                        pass
+                line_bot_api.reply_message(
+                    event.reply_token,
+                    TextSendMessage(text=summary_sentence))
+                
+                summary_flag = 0
+            
+            except:
+                line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text='このニュース記事は要約できません。'))
+            finally:    
+                return
+        else:
             line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text=summary_sentence))
+                TextSendMessage(text='要約したいニュース記事のURLを入力してください。'))
+    elif ((text_to_speech_flag == 1) and (summary_flag == 0)):
+        url = event.message.text
+        if (is_valid_url(url)):
+            try:
+                text = yahoo_news_text(url)
+            except:
+                pass
             
-            summary_flag = 0
+            try:
+                text = cnn_news_text(url)
+            except:
+                pass
             
+            try:
+                text = sankei_news_text(url)
+            except:
+                pass
+        
+            shared_url = text_to_speech(text)
+            line_bot_api.reply_message(
+                event.reply_token,
+                AudioSendMessage(type="audio", original_content_url=shared_url, duration=11000))
+            
+            text_to_speech_flag = 0
+        
             return
         else:
             line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text='URLを入力してください。'))
-    elif ((summary_flag == 1) and (news_flag == 1)):
-        url = event.message.text
-        if (is_valid_url(url)):
-            sentence = cnn_news_text(url)
-            split_sentence = length_decision(sentence)
-            
-            errormessage = ['']
-            summary_sentence = ''
-            for i, sentence in enumerate(split_sentence):
-                sentence = sentence.replace(' ', '')
-                result = text_summary(sentence, errormessage)
-                try:
-                    summary_sentence += result
-                except:
-                    pass
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text=summary_sentence))
-            
-            summary_flag = 0
-            
-            return
-        else:
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text='URLを入力してください。'))
-    elif ((summary_flag == 1) and (news_flag == 2)):
-        url = event.message.text
-        if (is_valid_url(url)):
-            sentence = sankei_news_text(url)
-            split_sentence = length_decision(sentence)
-            
-            errormessage = ['']
-            summary_sentence = ''
-            for i, sentence in enumerate(split_sentence):
-                sentence = sentence.replace(' ', '')
-                result = text_summary(sentence, errormessage)
-                try:
-                    summary_sentence += result
-                except:
-                    pass
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text=summary_sentence))
-            
-            summary_flag = 0
-            
-            return
-        else:
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text='URLを入力してください。'))
-        
-        
-        
+                TextSendMessage(text='音声変換したいニュース記事のURLを入力してください。'))
+
     article_urls = []
     for i, article in enumerate(articles):
         article_urls.append(articles[i]['URL'])
