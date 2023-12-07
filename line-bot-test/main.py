@@ -1,4 +1,3 @@
-
 from flask import Flask, request, abort
 from bs4 import BeautifulSoup
 import datetime
@@ -14,19 +13,26 @@ from linebot.exceptions import (
     InvalidSignatureError
 )
 from linebot.models import (
-    MessageEvent, TextMessage, TextSendMessage
+    AudioSendMessage, MessageEvent, TextMessage, TextSendMessage
 )
 
 from linebot.models import FlexSendMessage
 from linebot.models.flex_message import BubbleContainer
+from gtts import gTTS
+import dropbox
+from dropbox.exceptions import AuthError
+import tempfile
+
 
 app = Flask(__name__)
 
 yahoo_categories = ['国内', '国際', '経済', 'エンタメ', 'スポーツ', 'IT', '科学', 'ライフ']
 cnn_categories = ['World', 'USA', 'Business', 'Tech', 'Entertainment', 'Odd News']
-news_sites = ['ヤフーニュース', 'CNN']
+cnn_categories_change = ['世界', 'アメリカ', '経済', 'テクノロジー', 'エンタメ', '変わったニュース']
+sankei_categories = ['社会', '政治', '国際', '経済', 'スポーツ', 'エンタメ', 'ライフ']
+news_sites = ['ヤフーニュース', 'CNNニュース', '産経ニュース']
 
-# 0:ヤフーニュース 1:CNNニュース 5:要約
+# 0:ヤフーニュース 1:CNNニュース 2:産経ニュース
 news_flag = 0
 
 #0:要約しない 1:要約する
@@ -38,6 +44,25 @@ YOUR_CHANNEL_SECRET = os.environ["YOUR_CHANNEL_SECRET"]
 
 line_bot_api = LineBotApi(YOUR_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(YOUR_CHANNEL_SECRET)
+
+# Dropboxアプリのキーとシークレット
+app_key = '7cxbb0znnuk211n'
+app_secret = 'p41f3wefjt3blmw'
+
+# 期限切れのアクセストークン
+expired_access_token = 'sl.BqZPzPJJKRvAe2tBsxlXaWlbcQp5WkR3zxPSTA5Hi-cRRwQHuVKkevm8nvbSHRNqiSDh_8b9qDT8oriXEAum5o3EdiFAtlV7iboICaXJ7HJC9Bc15xZT77vOYSiPpM4Yn2VWIRXbFS_SHHQ'
+
+
+# Dropboxアクセストークンを設定
+try:
+    # Dropbox認証
+    flow = dropbox.DropboxOAuth2FlowNoRedirect(app_key, app_secret)
+    new_access_token, user_id = flow.refresh_token(expired_access_token)
+except:
+    new_access_token = 'sl.BqZPzPJJKRvAe2tBsxlXaWlbcQp5WkR3zxPSTA5Hi-cRRwQHuVKkevm8nvbSHRNqiSDh_8b9qDT8oriXEAum5o3EdiFAtlV7iboICaXJ7HJC9Bc15xZT77vOYSiPpM4Yn2VWIRXbFS_SHHQ'
+    
+dbx = dropbox.Dropbox(new_access_token)
+
 
 @app.route("/")
 def hello_world():
@@ -93,8 +118,8 @@ def create_button_message():
                         "height": "sm",
                         "action": {
                             "type": "message",
-                            "label": "World",
-                            "text": "World",
+                            "label": "世界",
+                            "text": "世界",
                         },
                     },
                     {
@@ -103,8 +128,8 @@ def create_button_message():
                         "height": "sm",
                         "action": {
                             "type": "message",
-                            "label": "USA",
-                            "text": "USA",
+                            "label": "アメリカ",
+                            "text": "アメリカ",
                         },
                     },
                     {
@@ -113,8 +138,8 @@ def create_button_message():
                         "height": "sm",
                         "action": {
                             "type": "message",
-                            "label": "Business",
-                            "text": "Business",
+                            "label": "経済",
+                            "text": "経済",
                         },
                     },
                     {
@@ -123,8 +148,8 @@ def create_button_message():
                         "height": "sm",
                         "action": {
                             "type": "message",
-                            "label": "Tech",
-                            "text": "Tech",
+                            "label": "テクノロジー",
+                            "text": "テクノロジー",
                         },
                     },
                     {
@@ -133,8 +158,8 @@ def create_button_message():
                         "height": "sm",
                         "action": {
                             "type": "message",
-                            "label": "Entertainment",
-                            "text": "Entertainment",
+                            "label": "エンタメ",
+                            "text": "エンタメ",
                         },
                     },
                     {
@@ -143,8 +168,8 @@ def create_button_message():
                         "height": "sm",
                         "action": {
                             "type": "message",
-                            "label": "Odd News",
-                            "text": "Odd News",
+                            "label": "変わったニュース",
+                            "text": "変わったニュース",
                         },
                     },
                 ],
@@ -258,7 +283,107 @@ def create_button_message():
                             "text": "ライフ",
                         },
                     },
-                    # ここに他のボタンを追加できます
+                ],
+            },
+        )
+
+        flex_message = FlexSendMessage(alt_text="ボタンメッセージ", contents=bubble)
+        return flex_message
+    elif(news_flag == 2):
+        bubble = BubbleContainer(
+            body={
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": "最新の人気ニュース",
+                        "weight": "bold",
+                        "size": "xl",
+                    },
+                    {
+                        "type": "text",
+                        "text": "興味のあるカテゴリーを押してください",
+                        "color": "#888888",
+                        "margin": "lg",
+                    },
+                ],
+            },
+            footer={
+                "type": "box",
+                "layout": "vertical",
+                "spacing": "sm",
+                "contents": [
+                    {
+                        "type": "button",
+                        "style": "primary",
+                        "height": "sm",
+                        "action": {
+                            "type": "message",
+                            "label": "社会",
+                            "text": "社会",
+                        },
+                    },
+                    {
+                        "type": "button",
+                        "style": "primary",
+                        "height": "sm",
+                        "action": {
+                            "type": "message",
+                            "label": "政治",
+                            "text": "政治",
+                        },
+                    },
+                    {
+                        "type": "button",
+                        "style": "primary",
+                        "height": "sm",
+                        "action": {
+                            "type": "message",
+                            "label": "国際",
+                            "text": "国際",
+                        },
+                    },
+                    {
+                        "type": "button",
+                        "style": "primary",
+                        "height": "sm",
+                        "action": {
+                            "type": "message",
+                            "label": "経済",
+                            "text": "経済",
+                        },
+                    },
+                    {
+                        "type": "button",
+                        "style": "primary",
+                        "height": "sm",
+                        "action": {
+                            "type": "message",
+                            "label": "スポーツ",
+                            "text": "スポーツ",
+                        },
+                    },
+                    {
+                        "type": "button",
+                        "style": "primary",
+                        "height": "sm",
+                        "action": {
+                            "type": "message",
+                            "label": "エンタメ",
+                            "text": "エンタメ",
+                        },
+                    },
+                    {
+                        "type": "button",
+                        "style": "primary",
+                        "height": "sm",
+                        "action": {
+                            "type": "message",
+                            "label": "ライフ",
+                            "text": "ライフ",
+                        },
+                    },
                 ],
             },
         )
@@ -288,7 +413,7 @@ def yahoo_news_ranking():
     
     return news_urls
 
-#上位5位のCNNニュースを取得
+#上位3位のCNNニュースを取得
 def cnn_news_ranking():
     url = 'https://www.cnn.co.jp/world/'
     r = requests.get(url)
@@ -304,14 +429,33 @@ def cnn_news_ranking():
     
     return news_urls
 
+#上位5位の産経ニュースを取得
+def sankei_news_ranking():
+    url = 'https://www.sankei.com/'
+    r = requests.get(url)
+    soup = BeautifulSoup(r.text, "html.parser")
+    
+    elements = soup.select('.ranking__item')
+    
+    news_urls = []
+    # ニュースのURLとタイトルを取得
+    for element in elements:
+        link = element.a['href']
+        news_urls.append(link)
+    
+    return news_urls
+
 def send_news_ranking():
     if (news_flag == 0):
-    
         news_urls = yahoo_news_ranking()
         messages = [TextSendMessage(text=url) for url in news_urls]
         line_bot_api.broadcast(messages=messages)
     elif (news_flag == 1):
         news_urls = cnn_news_ranking()
+        messages = [TextSendMessage(text=url) for url in news_urls]
+        line_bot_api.broadcast(messages=messages)
+    elif (news_flag == 2):
+        news_urls = sankei_news_ranking()
         messages = [TextSendMessage(text=url) for url in news_urls]
         line_bot_api.broadcast(messages=messages)
 
@@ -329,8 +473,6 @@ end_time = datetime.time(22, 10)   # 終了時刻 22:10
 # now = datetime.datetime.now(JST)
 # current_time = now.strftime('%Y/%m/%d %H:%M:%S')
 
-#LineのユーザーID
-#user_id = 'U2925b78f74c0cbde9804be066eb707f0'
 
 # 判定条件
 if (start_time <= now <= end_time):
@@ -517,11 +659,76 @@ def cnn_news_scraping(topic):
 
     return articles
 
+#産経ニュースの情報を取得
+def sankei_news_scraping(topic):
+    url = 'https://www.sankei.com/'
+    r = requests.get(url)
+    soup = BeautifulSoup(r.text, "html.parser")
+    elements = soup.select('.nav-link')
+    categories_elements = elements[2:9]
+    
+    #カテゴリーのURL取得
+    category_urls = []
+    for i, element in enumerate(categories_elements):
+        link = 'https://www.sankei.com/' + element.a['href']
+        category_urls.append(link)
+
+        if (topic == element.text):
+            categories_num = i
+        time.sleep(0.2)
+    
+    r = requests.get(category_urls[categories_num])
+    soup = BeautifulSoup(r.text, "html.parser")
+    elements = soup.select('.ranking__item ')
+    
+    #取得するニュースの数を５つにしている
+    elements = elements[0:5]
+    
+    #ニュースのURLの取得
+    news_urls = []
+    for element in elements:
+        link = element.a['href']
+        news_urls.append(link)
+        time.sleep(0.2)
+    
+    #ニュースの本文を取得
+    news_text = []
+    for news_url in news_urls:
+        r = requests.get(news_url)
+        soup = BeautifulSoup(r.text, "html.parser")
+        elements = soup.select('.article-text')
+
+        time.sleep(0.2)
+    
+        text = ''
+        for element in elements:
+            text += element.text
+            
+        news_text.append(text)
+
+    articles = []
+    for url, text in zip(news_urls, news_text):
+        article = {
+            "URL" : url,
+            "text" : text
+        }
+        articles.append(article)
+
+    return articles
+
 #データを整える
 def clean_data(articles):
     for i in range(len(articles)):
         articles[i]['title'] = articles[i]['title'].replace('\u3000', '') 
         articles[i]['title'] = articles[i]['title'].lstrip('0123456789')
+        articles[i]['text'] = articles[i]['text'].replace('\u3000', '')
+        articles[i]['text'] = articles[i]['text'].replace('\n', '')
+
+    return articles
+
+#データを整える(産経)
+def clean_data_sankei(articles):
+    for i in range(len(articles)):
         articles[i]['text'] = articles[i]['text'].replace('\u3000', '')
         articles[i]['text'] = articles[i]['text'].replace('\n', '')
 
@@ -606,6 +813,23 @@ def cnn_news_text(url):
 
     return text
 
+#産経ニュースの要約を行う本文の取得
+def sankei_news_text(url):
+    r = requests.get(url)
+    soup = BeautifulSoup(r.text, "html.parser")
+    elements = soup.select('.article-text')
+
+    time.sleep(0.2)
+
+    text = ''
+    for element in elements:
+        text += element.text
+    
+    text = text.replace('\u3000', '')
+    text = text.replace('\n', '')
+
+    return text
+
 #ニュースの本文を区切る
 def length_decision(sentence):
     if (len(sentence) > 350):
@@ -670,17 +894,57 @@ def is_valid_url(url):
     else:
         return False
 
+def text_to_speech(text):
+    return False
+
 @handler.add(MessageEvent, message=TextMessage)
-def handle_message(event): 
-    
+def handle_message(event):
     #ユーザーIDを取得する
     user_id = event.source.user_id
     
     global news_flag
     global summary_flag
     
-    if (event.message.text == 'ボタン'):
-        send_button_message(user_id)
+    try:
+    # 音声ファイルを作成
+        text = "このエラーは、Dropbox APIに対して必要なスコープ（sharing.write）がアプリケーションに許可されていないために発生しています。Dropbox APIを使用するには、アプリケーションの設定で適切なスコープを設定する必要があります。"
+        tts = gTTS(text, lang="ja")
+
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as temp_file:
+            tts.save(temp_file.name)
+            temp_file.close()
+            audio_file_path = temp_file.name
+
+        # Dropboxにファイルをアップロード
+        with open(audio_file_path, 'rb') as file:
+            dbx.files_upload(file.read(), '/uploaded-files/' + os.path.basename(audio_file_path))
+
+        # Dropbox上のファイルへの共有可能なURLを生成
+        shared_url = dbx.sharing_create_shared_link('/uploaded-files/' + os.path.basename(audio_file_path))
+        # shared_url = shared_link_metadata.url.replace('?dl=0', '?dl=1')
+
+        # Lineに音声ファイルを送信
+        # audio_message = AudioSendMessage(original_content_url=shared_url, duration=22000)  # durationはダミーの値
+        # line_bot_api.push_message(
+        #     user_id,
+        #     [TextSendMessage(text="テキストメッセージ"), audio_message]
+        # )
+        line_bot_api.reply_message(
+            event.reply_token,
+            AudioSendMessage(type="audio", original_content_url=shared_url, duration=22000))
+
+    except Exception as e:
+        error_message = f"エラーが発生しました: {str(e)}"
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=error_message)
+        )
+
+    finally:
+        # 一時ファイルを削除
+        os.remove(audio_file_path)
+
+
     
     if (event.message.text == 'ヤフーニュース'):
         line_bot_api.reply_message(
@@ -688,11 +952,17 @@ def handle_message(event):
                 TextSendMessage(text='ヤフーニュースを取得します。'))
         news_flag = 0
         send_button_message(user_id)
-    elif (event.message.text == 'CNN'):
+    elif (event.message.text == 'CNNニュース'):
         line_bot_api.reply_message(
                 event.reply_token,
                 TextSendMessage(text='CNNニュースを取得します。'))
         news_flag = 1
+        send_button_message(user_id)
+    elif (event.message.text == '産経ニュース'):
+        line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text='産経ニュースを取得します。'))
+        news_flag = 2
         send_button_message(user_id)
     elif (event.message.text == '要約'):
         summary_flag = 1
@@ -701,22 +971,26 @@ def handle_message(event):
         if event.message.text in yahoo_categories:
             articles_dict = yahoo_news_scraping(event.message.text)
             articles = clean_data(articles_dict)
-        elif (event.message.text in news_sites):
-            pass
+        # elif (event.message.text in news_sites):
+        #     pass
         else:
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text='国内, 国際, 経済, エンタメ, スポーツ, IT, 科学, ライフのいずれかを入力してください。'))
+            pass
     elif ((news_flag == 1) and (summary_flag != 1)):
-        if (event.message.text in cnn_categories):
-            articles_dict = cnn_news_scraping(event.message.text)
+        if (event.message.text in cnn_categories_change):
+            articles_dict = cnn_news_scraping(cnn_categories[cnn_categories_change.index(event.message.text)])
             articles = clean_data(articles_dict)
-        elif (event.message.text in news_sites):
-            pass
+        # elif (event.message.text in news_sites):
+        #     pass
         else:
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text='World, USA, Business, Tech, Entertainment, Odd Newsのいずれかを入力してください。'))
+            pass
+    elif ((news_flag == 2) and (summary_flag != 1)):
+        if (event.message.text in sankei_categories):
+            articles_dict = sankei_news_scraping(event.message.text)
+            articles = clean_data_sankei(articles_dict)
+        # elif (event.message.text in news_sites):
+        #     pass
+        else:
+            pass
     elif ((summary_flag == 1) and (news_flag == 0)):
         url = event.message.text
         if (is_valid_url(url)):
@@ -743,7 +1017,6 @@ def handle_message(event):
             line_bot_api.reply_message(
                 event.reply_token,
                 TextSendMessage(text='URLを入力してください。'))
-    
     elif ((summary_flag == 1) and (news_flag == 1)):
         url = event.message.text
         if (is_valid_url(url)):
@@ -770,6 +1043,33 @@ def handle_message(event):
             line_bot_api.reply_message(
                 event.reply_token,
                 TextSendMessage(text='URLを入力してください。'))
+    elif ((summary_flag == 1) and (news_flag == 2)):
+        url = event.message.text
+        if (is_valid_url(url)):
+            sentence = sankei_news_text(url)
+            split_sentence = length_decision(sentence)
+            
+            errormessage = ['']
+            summary_sentence = ''
+            for i, sentence in enumerate(split_sentence):
+                sentence = sentence.replace(' ', '')
+                result = text_summary(sentence, errormessage)
+                try:
+                    summary_sentence += result
+                except:
+                    pass
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text=summary_sentence))
+            
+            summary_flag = 0
+            
+            return
+        else:
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text='URLを入力してください。'))
+        
         
         
     article_urls = []
