@@ -30,7 +30,7 @@ yahoo_categories = ['国内', '国際', '経済', 'エンタメ', 'スポーツ'
 cnn_categories = ['World', 'USA', 'Business', 'Tech', 'Entertainment', 'Odd News']
 cnn_categories_change = ['世界', 'アメリカ', '経済', 'テクノロジー', 'エンタメ', '変わったニュース']
 sankei_categories = ['社会', '政治', '国際', '経済', 'スポーツ', 'エンタメ', 'ライフ']
-news_sites = ['ヤフーニュース', 'CNNニュース', '産経ニュース', '要約', '音声変換']
+news_sites = ['ヤフーニュース', 'CNNニュース', '産経ニュース', '要約', '音声変換', 'リセット']
 
 # 0:ヤフーニュース 1:CNNニュース 2:産経ニュース
 news_flag = 0
@@ -53,7 +53,7 @@ app_key = '7cxbb0znnuk211n'
 app_secret = 'p41f3wefjt3blmw'
 
 # アクセストークン 
-access_token = 'sl.BrQvSFEKU2Fay_hLDdfzbHS5ZNKlsYyf6Cp2xiYTCDSHV0ZTLN_Xv4J9izQJ1MeBw3Wp0ta1LR24UOWHBaZJVy9G6sjYrz5NtUf9Xc5hPA2NDnylw5aNA1qA17ldmr3NVbXRd64hhrXE79c'    
+access_token = 'sl.BsDOFRKsxXS88qEY16XAY1ABX20AF_0ek-E-HsBgeAHwG9_gVM871Wl7cEbklhMts_x4IQeAyhcZlmlUQC-HVW-RKD-7rM0ACyZ6CI3Y6fy7rpBPqW--nzvSx8VD6lqm09vYUSjFlvFc9_I'    
 dbx = dropbox.Dropbox(access_token)
 
 
@@ -457,8 +457,8 @@ def send_news_ranking():
 now = datetime.datetime.now().time()
 
 # 判定する時間帯を設定（開始時刻・終了時刻から-9時間する必要がある）
-start_time = datetime.time(4, 40)  # 開始時刻
-end_time = datetime.time(5, 20)   # 終了時刻
+start_time = datetime.time(2, 40)  # 開始時刻
+end_time = datetime.time(3, 20)   # 終了時刻
 
 #現在の日付を取得
 # t_delta = datetime.timedelta(hours=9)
@@ -470,10 +470,6 @@ end_time = datetime.time(5, 20)   # 終了時刻
 # 判定条件
 if (start_time <= now <= end_time):
    send_news_ranking()
-#else:
-   #line_bot_api.push_message(user_id, TextSendMessage(text='送信できません'))
-
-
         
 #ヤフーニュースの情報を取得
 def yahoo_news_scraping(topic):
@@ -522,7 +518,7 @@ def yahoo_news_scraping(topic):
         r = requests.get(news_url)
         soup = BeautifulSoup(r.text, "html.parser")
         #クラス名が変わるので注意！！ 
-        elements = soup.select('.sc-ksXiki.dXXEDb.yjSlinkDirectlink.highLightSearchTarget')
+        elements = soup.select('.sc-gLMgcV.EJLaQ.yjSlinkDirectlink.highLightSearchTarget')
     
         text = ""
     
@@ -553,7 +549,7 @@ def yahoo_news_scraping(topic):
                 r = requests.get(news_url_page)
                 soup = BeautifulSoup(r.text, "html.parser")
                 #クラス名が変わるので注意！！ 
-                elements = soup.select('.sc-iMCRTP.ePfheF.yjSlinkDirectlink.highLightSearchTargett')
+                elements = soup.select('.sc-gLMgcV.EJLaQ.yjSlinkDirectlink.highLightSearchTarget')
                 #ニュース記事の本文が配列で区切られていた場合
                 for i in range(0, 8):
                     try:
@@ -658,7 +654,7 @@ def sankei_news_scraping(topic):
     r = requests.get(url)
     soup = BeautifulSoup(r.text, "html.parser")
     elements = soup.select('.nav-link')
-    categories_elements = elements[11:18]
+    categories_elements = elements[13:20]
     
     #カテゴリーのURL取得
     category_urls = []
@@ -733,7 +729,7 @@ def yahoo_news_text(url):
     r = requests.get(url)
     soup = BeautifulSoup(r.text, "html.parser")
     #クラス名が変わるので注意！！ 
-    elements = soup.select('.sc-ksXiki.dXXEDb.yjSlinkDirectlink.highLightSearchTarget')
+    elements = soup.select('.sc-gLMgcV.EJLaQ.yjSlinkDirectlink.highLightSearchTarget')
 
     text = ""
 
@@ -764,7 +760,7 @@ def yahoo_news_text(url):
             r = requests.get(news_url_page)
             soup = BeautifulSoup(r.text, "html.parser")
             #クラス名が変わるので注意！！ 
-            elements = soup.select('.sc-iMCRTP.ePfheF.yjSlinkDirectlink.highLightSearchTargett')
+            elements = soup.select('.sc-gLMgcV.EJLaQ.yjSlinkDirectlink.highLightSearchTarget')
             #ニュース記事の本文が配列で区切られていた場合
             for i in range(0, 8):
                 try:
@@ -773,6 +769,7 @@ def yahoo_news_text(url):
                     pass
     text = text.replace('\u3000', '')
     text = text.replace('\n', '')
+    
     return text
 
 #CNNニュースの要約を行う本文の取得
@@ -943,6 +940,9 @@ def handle_message(event):
         summary_flag = 1
     elif (event.message.text == '音声変換'):
         text_to_speech_flag = 1
+    elif (event.message.text == 'リセット'):
+        summary_flag = 0
+        text_to_speech_flag = 0
     
     if ((news_flag == 0) and (summary_flag == 0) and (text_to_speech_flag == 0)):
         if event.message.text in yahoo_categories:
@@ -966,44 +966,43 @@ def handle_message(event):
         url = event.message.text
         if (is_valid_url(url)):
             try:
-                try:
-                    sentence = yahoo_news_text(url)
-                except:
-                    pass
-                
-                try:
-                    sentence = cnn_news_text(url)
-                except:
-                    pass
-                
-                try:
-                    sentence = sankei_news_text(url)
-                except:
-                    pass
-                
-                split_sentence = length_decision(sentence)
-                
-                errormessage = ['']
-                summary_sentence = ''
-                for i, sentence in enumerate(split_sentence):
-                    sentence = sentence.replace(' ', '')
-                    result = text_summary(sentence, errormessage)
-                    try:
-                        summary_sentence += result
-                    except:
-                        pass
-                line_bot_api.reply_message(
-                    event.reply_token,
-                    TextSendMessage(text=summary_sentence))
-                
-                summary_flag = 0
-            
+                yahoo_sentence = yahoo_news_text(url)
             except:
-                line_bot_api.reply_message(
+                yahoo_sentence = ''
+            
+            try:
+                cnn_sentence = cnn_news_text(url)
+            except:
+                cnn_sentence = ''
+            
+            try:
+                sankei_sentence = sankei_news_text(url)
+            except:
+                sankei_sentence = ''
+            
+            if (len(yahoo_sentence) > 10):
+                split_sentence = length_decision(yahoo_sentence)
+            
+            if (len(cnn_sentence) > 10):
+                split_sentence = length_decision(cnn_sentence)
+                
+            if (len(sankei_sentence) > 10):
+                split_sentence = length_decision(sankei_sentence)
+            
+            errormessage = ['']
+            summary_sentence = ''
+            for i, sentence in enumerate(split_sentence):
+                sentence = sentence.replace(' ', '')
+                result = text_summary(sentence, errormessage)
+                try:
+                    summary_sentence += result
+                except:
+                    pass
+            line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text='このニュース記事は要約できません。'))
-            finally:    
-                return
+                TextSendMessage(text=summary_sentence))
+            
+            summary_flag = 0
         else:
             line_bot_api.reply_message(
                 event.reply_token,
@@ -1012,21 +1011,29 @@ def handle_message(event):
         url = event.message.text
         if (is_valid_url(url)):
             try:
-                text = yahoo_news_text(url)
+                yahoo_text = yahoo_news_text(url)
             except:
-                pass
+                yahoo_text = ''
             
             try:
-                text = cnn_news_text(url)
+                cnn_text = cnn_news_text(url)
             except:
-                pass
+                cnn_text = ''
             
             try:
-                text = sankei_news_text(url)
+                sankei_text = sankei_news_text(url)
             except:
-                pass
-        
-            shared_url = text_to_speech(text)
+                sankei_text = ''
+            
+            if (len(yahoo_text) > 10):
+                shared_url = text_to_speech(yahoo_text)
+            
+            if (len(cnn_text) > 10):
+                shared_url = text_to_speech(cnn_text)
+                
+            if (len(sankei_text) > 10):
+                shared_url = text_to_speech(sankei_text)
+                
             line_bot_api.reply_message(
                 event.reply_token,
                 AudioSendMessage(type="audio", original_content_url=shared_url, duration=11000))
